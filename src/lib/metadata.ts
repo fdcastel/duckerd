@@ -34,6 +34,7 @@ export interface Table {
   columnCount: number;
   indexCount: number;
   checkConstraintCount: number;
+  comment?: string;
   sql: string;
   columns?: Column[];
   indexes?: Index[];
@@ -99,7 +100,7 @@ const databaseMetadataQuery = `SELECT database_name as databaseName FROM duckdb_
 // Schema metadata query
 const schemaMetadataQuery = `SELECT database_name as databaseName, schema_name as schemaName FROM duckdb_schemas() WHERE database_name NOT IN ('system', 'temp') and schema_name NOT IN ('information_schema', 'pg_catalog') ORDER BY database_name, schema_name`;
 // Table metadata query
-const tablesMetadataQuery = `SELECT database_name as databaseName, schema_name as schemaName, table_name as name, has_primary_key as hasPrimaryKey, estimated_size as estimatedRowCount, column_count as columnCount, index_count as indexCount, check_constraint_count as checkConstraintCount, sql FROM duckdb_tables() WHERE internal = false ORDER BY database_name, schema_name, table_name`;
+const tablesMetadataQuery = `SELECT database_name as databaseName, schema_name as schemaName, table_name as name, has_primary_key as hasPrimaryKey, estimated_size as estimatedRowCount, column_count as columnCount, index_count as indexCount, check_constraint_count as checkConstraintCount, comment, sql FROM duckdb_tables() WHERE internal = false ORDER BY database_name, schema_name, table_name`;
 // Column metadata query
 const columnsMetadataQuery = `SELECT database_name as databaseName, schema_name as schemaName, table_name as tableName, column_name as name, data_type as dataType, numeric_precision as precision, numeric_scale as scale, is_nullable as isNullable FROM duckdb_columns() WHERE internal = false ORDER BY database_name, schema_name, table_name, column_index`;
 // Index metadata query
@@ -136,6 +137,7 @@ export const getMetadata = async (conn: DuckDBConnection): Promise<Metadata> => 
         columnCount: table.columnCount,
         indexCount: table.indexCount,
         checkConstraintCount: table.checkConstraintCount,
+        comment: table.comment ?? undefined,
         sql: table.sql,
         columns: [...new Set(columns.filter(column => column.databaseName === table.databaseName && column.schemaName === table.schemaName && column.tableName === table.name).map(column => ({
           name: column.name,
@@ -196,8 +198,21 @@ const foldIdentifier = (name: string): string => name.replace(/[A-Z]+/g, (letter
 export const qualifyModes = ['auto', 'always', 'never'] as const;
 export type QualifyMode = typeof qualifyModes[number];
 
+/**
+ * Whether to draw a box around each schema's tables: only when the tables span
+ * more than one schema, always, or never.
+ */
+export const groupModes = ['auto', 'schema', 'none'] as const;
+export type GroupMode = typeof groupModes[number];
+
 export interface DiagramOptions {
   qualify?: QualifyMode;
+  group?: GroupMode;
+  /**
+   * Groups tables by comment instead of schema. The first capture group of a match
+   * (or the whole match, without one) names the group; other tables stay ungrouped.
+   */
+  groupComment?: RegExp;
 }
 
 type TableName = (databaseName: string, schemaName: string, name: string) => string;
@@ -228,6 +243,28 @@ export const tableNamer = (
     const level = levels.findIndex((level, index) => (counts[index].get(level(database, schema, name)) ?? 0) <= 1);
     return levels[level === -1 ? levels.length - 1 : level](database, schema, name);
   };
+};
+
+/**
+ * Returns the group label for each table, or undefined to leave it ungrouped.
+ * Schema groups are labelled `schema`, or `database.schema` with several databases.
+ */
+export const tableGrouper = (
+  tables: { databaseName: string; schemaName: string; comment?: string }[], options: DiagramOptions,
+): (table: Table) => string | undefined => {
+  const { groupComment, group = 'auto' } = options;
+  if (groupComment) {
+    return (table) => {
+      const match = table.comment?.match(groupComment);
+      return (match?.[1] ?? match?.[0])?.trim() || undefined;
+    };
+  }
+  const severalDatabases = new Set(tables.map((table) => table.databaseName)).size > 1;
+  const label = (table: { databaseName?: string; schemaName?: string }): string =>
+    severalDatabases ? `${table.databaseName}.${table.schemaName}` : table.schemaName!;
+  const schemas = new Set(tables.map(label));
+  if (group === 'none' || (group === 'auto' && schemas.size < 2)) return () => undefined;
+  return label;
 };
 
 export const generateMermaidCodeForAllDBs = (
@@ -265,7 +302,7 @@ export const generateMermaidCodeForAllDBs = (
   }
 
   // Add tables, columns and declared constraints without inventing FK markers.
-  mermaidCode += tables.map((table) => {
+  const blocks = tables.map((table) => {
     // DuckDB identifiers are case-insensitive, so a constraint may spell its
     // columns differently from the table definition: PRIMARY KEY (personid).
     const markers = new Map<string, string[]>();
@@ -299,8 +336,27 @@ export const generateMermaidCodeForAllDBs = (
       .map((referenced) => `    "${qualifiedName(table.databaseName, table.schemaName, referenced)}" ||--o{ "${entityName(table)}" : ""`).join('\n');
     // Mermaid allows an entity without an attribute block; it renders as a name-only box.
     const entity = columns ? `"${entityName(table)}" {\n${columns}\n    }` : `"${entityName(table)}"`;
-    return `${entity}\n${foreignKeys}`;
-  }).join('\n    ');
+    return { table, entity, foreignKeys };
+  });
+
+  const groupOf = tableGrouper(tables, options);
+  const groups = new Map<string, string[]>();
+  for (const { table, entity } of blocks) {
+    const group = groupOf(table);
+    if (group !== undefined) groups.set(group, [...groups.get(group) ?? [], entity]);
+  }
+  if (groups.size === 0) {
+    mermaidCode += blocks.map(({ entity, foreignKeys }) => `${entity}\n${foreignKeys}`).join('\n    ');
+  } else {
+    // Pele draws each subgraph as a labelled box around its entities. Relationships
+    // follow every entity, since they may cross groups.
+    const indent = (text: string): string => text.split('\n').map((line) => `  ${line}`).join('\n');
+    mermaidCode += [
+      ...[...groups].map(([label, entities], index) =>
+        `subgraph group${index + 1} ["${label.replace(/"/g, "'")}"]\n${entities.map((entity) => indent(`    ${entity}`)).join('\n')}\n    end`),
+      ...blocks.filter(({ table }) => groupOf(table) === undefined).map(({ entity }) => entity),
+    ].join('\n    ') + '\n' + blocks.map(({ foreignKeys }) => foreignKeys).filter(Boolean).join('\n');
+  }
 
   if (inferred.length > 0) {
     mermaidCode += '\n' + inferred.map(({ left, right, columns }) =>

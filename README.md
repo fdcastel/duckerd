@@ -36,6 +36,8 @@ Generate an ERD diagram of the database schemas.
 - `-H, --height <height>`: Output canvas height in pixels (default: the diagram's natural size)
 - `--detail <level>`: How much of each table to draw (choices: `full`, `keys`, `names`; default: `full`). See [Large databases](#large-databases).
 - `--qualify <mode>`: Prefix table names with their database (choices: `auto`, `always`, `never`; default: `auto`, which adds the prefix only when the diagram spans several databases). See [Table names](#table-names).
+- `--group <mode>`: Draw a labelled box around each schema's tables (choices: `auto`, `schema`, `none`; default: `auto`, which groups only when the tables span several schemas). See [Grouping tables](#grouping-tables).
+- `--group-comment <regex>`: Group tables by their comment instead of their schema; cannot be combined with `--group`
 - `-f, --outputFormat <format>`: Output format (choices: `svg`, `png`, `pdf`; default: output file extension, or `png`)
 - `-e, --expand-structs`: Expand `STRUCT` columns into individual sub-field rows (e.g. `full_name STRUCT(given VARCHAR, family VARCHAR)` becomes `full_name__given` and `full_name__family`)
 - `--infer`: Infer relationships from matching columns when the entire diagram has no declared foreign keys (disabled by default)
@@ -71,6 +73,18 @@ duckerd -d ./mydb.duckdb -o ./erd.svg -m ./erd.mmd
 With one database, which is the usual case, each table is named `table`. When the diagram spans several databases, names include the database, as `database.table`. `--qualify` changes this: `always` includes the database even when there is only one, and `never` leaves it out even when there are several.
 
 Tables that share a name in different schemas get the schema as well, as `schema.table` or `database.schema.table`, so they stay separate boxes. With `--qualify never`, tables that share both schema and table name in different databases use `database.schema.table`.
+
+### Grouping tables
+
+When the tables span more than one schema, each schema's tables are drawn inside a labelled box. With several databases, the boxes are labelled `database.schema`. `--group schema` draws a box even for a single schema, and `--group none` turns grouping off.
+
+`--group-comment <regex>` groups tables by their comment instead. The first capture group of the match names the group (the whole match, if the pattern has no group), and tables whose comment does not match are drawn outside any box. This helps when a database flattens several logical areas into one schema:
+
+```bash
+duckerd -d ./mydb.duckdb --group-comment 'area: (\w+)' -o ./erd.svg
+```
+
+Groups are written as `subgraph` blocks in the saved source. Pele supports them in ER diagrams, but other Mermaid renderers may not; use `--group none` with `-m` for source that does not use them.
 
 ## Large databases
 

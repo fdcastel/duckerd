@@ -38,6 +38,8 @@ before(async () => {
       );
       CREATE TABLE orders (order_id INTEGER);
       CREATE TABLE lineitem (order_id INTEGER);
+      COMMENT ON TABLE teams IS 'Area: Org';
+      COMMENT ON TABLE people IS 'Area: Org';
     `);
   } finally {
     connection.closeSync();
@@ -300,4 +302,32 @@ test('CLI validates inference regex and flag dependency before touching outputs 
     assert.equal(readFileSync(output, 'utf8'), 'existing diagram');
     assert.equal(readFileSync(source, 'utf8'), 'existing source');
   }
+});
+
+test('CLI --group draws schema boxes and --group-comment groups by table comment', () => {
+  const subgraphs = (file: string): string[] =>
+    [...readFileSync(path.join(directory, file), 'utf8').matchAll(/subgraph group\d+ \["([^"]*)"\]/g)].map(([, title]) => title);
+
+  assert.equal(run('-d', inferenceDatabase, '-o', 'group-auto.svg', '-m', 'group-auto.mmd').status, 0);
+  assert.deepEqual(subgraphs('group-auto.mmd'), ['archive', 'main']);
+  assert.match(readFileSync(path.join(directory, 'group-auto.svg'), 'utf8'), /class="pele-cluster-label"[^>]*>archive<\/text>/);
+  assert.equal(run('-d', inferenceDatabase, '--group', 'none', '-o', 'group-none.svg', '-m', 'group-none.mmd').status, 0);
+  assert.deepEqual(subgraphs('group-none.mmd'), []);
+  assert.equal(run('-d', database, '-o', 'group-single.svg', '-m', 'group-single.mmd').status, 0);
+  assert.deepEqual(subgraphs('group-single.mmd'), [], 'one schema is not grouped by default');
+
+  const result = run('-d', database, '--group-comment', 'Area: (\\w+)', '-o', 'group-comment.svg', '-m', 'group-comment.mmd');
+  assert.equal(result.status, 0, result.stderr);
+  const source = readFileSync(path.join(directory, 'group-comment.mmd'), 'utf8');
+  assert.deepEqual(subgraphs('group-comment.mmd'), ['Org']);
+  assert.match(source, /\["Org"\]\n\s+"people" \{[\s\S]*?\n\s+"teams" \{[\s\S]*?\n\s+end\n/);
+  assert.match(readFileSync(path.join(directory, 'group-comment.svg'), 'utf8'), /class="pele-cluster-label"[^>]*>Org<\/text>/);
+
+  const conflict = run('-d', database, '--group', 'schema', '--group-comment', 'x', '-o', 'group-conflict.svg');
+  assert.equal(conflict.status, 1);
+  assert.match(conflict.stderr, /--group-comment.*cannot be used with option '--group/);
+  const invalid = run('-d', database, '--group-comment', '(', '-o', 'group-invalid.svg');
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /Invalid --group-comment/);
+  assert.ok(!existsSync(path.join(directory, 'group-conflict.svg')) && !existsSync(path.join(directory, 'group-invalid.svg')));
 });

@@ -8,7 +8,7 @@ import { createERD } from './commands/erd';
 import { OutputFormat, outputFormats, renderERD } from './lib/render';
 import { loadTheme, Theme, themeNames } from './lib/themes';
 import { DEFAULT_INFER_REGEX } from './lib/inference';
-import { DetailLevel, detailLevels, QualifyMode, qualifyModes } from './lib/metadata';
+import { DetailLevel, detailLevels, GroupMode, groupModes, QualifyMode, qualifyModes } from './lib/metadata';
 import { version } from '../package.json';
 
 interface Options {
@@ -23,6 +23,8 @@ interface Options {
   inferRegex?: RegExp;
   detail: DetailLevel;
   qualify: QualifyMode;
+  group: GroupMode;
+  groupComment?: RegExp;
   width?: number;
   height?: number;
   outputFormat?: OutputFormat;
@@ -38,11 +40,11 @@ const positiveInteger = (value: string): number => {
 
 const program = new Command();
 
-const inferenceRegex = (value: string): RegExp => {
+const regex = (option: string, flags?: string) => (value: string): RegExp => {
   try {
-    return new RegExp(value, 'i');
+    return new RegExp(value, flags);
   } catch (error) {
-    throw new InvalidArgumentError(`Invalid --infer-regex: ${error instanceof Error ? error.message : String(error)}`);
+    throw new InvalidArgumentError(`Invalid ${option}: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
@@ -57,9 +59,11 @@ program
   .option('-m, --mmd-output <path>', 'Save the ER diagram source (.mmd) consumed by Pele')
   .option('-e, --expand-structs', 'Expand STRUCT type columns into individual sub-field rows')
   .option('--infer', 'Infer relationships when the diagram has no declared foreign keys', false)
-  .option('--infer-regex <pattern>', 'Case-insensitive column-name regex for inference (requires --infer; default: _id$)', inferenceRegex)
+  .option('--infer-regex <pattern>', 'Case-insensitive column-name regex for inference (requires --infer; default: _id$)', regex('--infer-regex', 'i'))
   .addOption(new Option('--detail <level>', 'Table detail: all columns, key columns only, or table names only').choices([...detailLevels]).default('full'))
   .addOption(new Option('--qualify <mode>', 'Prefix table names with their database: when there are several, always, or never').choices([...qualifyModes]).default('auto'))
+  .addOption(new Option('--group <mode>', 'Draw a box around each schema: when there are several, always, or never').choices([...groupModes]).default('auto'))
+  .addOption(new Option('--group-comment <regex>', 'Group tables by comment instead of schema; the first capture group names the group').argParser(regex('--group-comment')).conflicts('group'))
   .option('-w, --width <width>', 'Output canvas width in pixels (default: natural diagram size; height follows if -H is omitted)', positiveInteger)
   .option('-H, --height <height>', 'Output canvas height in pixels (default: natural diagram size; width follows if -w is omitted)', positiveInteger)
   .addOption(new Option('-f, --outputFormat <format>', 'Output format (default: output extension or png)').choices([...outputFormats]))
@@ -87,7 +91,7 @@ program
     console.log('Generating ERD diagram...');
     const source = await createERD(
       dbPath, options.expandStructs ?? false, options.infer, options.inferRegex ?? DEFAULT_INFER_REGEX, options.detail,
-      { qualify: options.qualify },
+      { qualify: options.qualify, group: options.group, groupComment: options.groupComment },
     );
     if (!source) {
       console.log('No tables found in the database.');
