@@ -46,15 +46,15 @@ test('full detail is the default and keeps every column', () => {
 
 test('keys detail keeps only PK and FK columns and draws keyless tables as names', async () => {
   const source = generateMermaidCodeForAllDBs(declared, true, false, undefined, 'keys')!;
-  assert.match(source, /"db\.teams" \{\n\s+INTEGER id PK\n\s+\}/);
-  assert.match(source, /"db\.people" \{\n\s+INTEGER id PK\n\s+INTEGER team_id FK\n\s+\}/);
+  assert.match(source, /"teams" \{\n\s+INTEGER id PK\n\s+\}/);
+  assert.match(source, /"people" \{\n\s+INTEGER id PK\n\s+INTEGER team_id FK\n\s+\}/);
   assert.doesNotMatch(source, /title|\bname\b|full_name|body/);
-  assert.match(source, /^\s*"db\.notes"$/m);
-  assert.match(source, /"db\.teams" \|\|--o\{ "db\.people" : ""$/m);
+  assert.match(source, /^\s*"notes"$/m);
+  assert.match(source, /"teams" \|\|--o\{ "people" : ""$/m);
   const svg = (await renderERD(source, { format: 'svg', theme: 'default' })).toString();
   assertNaturalSize(svg);
   assert.match(svg, />team_id<\/text>/);
-  assert.match(svg, />db\.notes<\/text>/);
+  assert.match(svg, />notes<\/text>/);
 });
 
 test('keys detail keeps columns behind inferred relationships', () => {
@@ -72,11 +72,11 @@ test('keys detail keeps columns behind inferred relationships', () => {
 test('names detail draws every table without attributes but keeps relationships', async () => {
   const source = generateMermaidCodeForAllDBs(declared, false, false, undefined, 'names')!;
   assert.doesNotMatch(source, /\{\s*$|^\s*\}|INTEGER|VARCHAR/m);
-  for (const name of ['teams', 'people', 'notes']) assert.match(source, new RegExp(`^\\s*"db\\.${name}"$`, 'm'));
-  assert.match(source, /"db\.teams" \|\|--o\{ "db\.people" : ""$/m);
+  for (const name of ['teams', 'people', 'notes']) assert.match(source, new RegExp(`^\\s*"${name}"$`, 'm'));
+  assert.match(source, /"teams" \|\|--o\{ "people" : ""$/m);
   const svg = (await renderERD(source, { format: 'svg', theme: 'default' })).toString();
   assertNaturalSize(svg);
-  assert.match(svg, />db\.people<\/text>/);
+  assert.match(svg, />people<\/text>/);
   assert.match(svg, /class="pele-marker"/);
   assert.doesNotMatch(svg, />INTEGER<\/text>/);
 });
@@ -104,14 +104,14 @@ test('key columns match their constraints as DuckDB does, folding only ASCII let
 
   for (const detail of ['keys', 'full'] as const) {
     const source = (await createERD(database, false, false, undefined, detail))!;
-    assert.match(source, /"case\.people" \{\n\s+INTEGER PersonID PK\n\s+\}/, detail);
-    assert.match(source, /"case\.contacts" \{\n\s+INTEGER MemberID FK\n/, detail);
-    assert.match(source, /"case\.badges" \{\n\s+INTEGER holder PK,FK\n\s+\}/, detail);
-    assert.match(source, /"case\.names" \{\n\s+INTEGER Émile PK\n\s+\}/, detail);
+    assert.match(source, /"people" \{\n\s+INTEGER PersonID PK\n\s+\}/, detail);
+    assert.match(source, /"contacts" \{\n\s+INTEGER MemberID FK\n/, detail);
+    assert.match(source, /"badges" \{\n\s+INTEGER holder PK,FK\n\s+\}/, detail);
+    assert.match(source, /"names" \{\n\s+INTEGER Émile PK\n\s+\}/, detail);
   }
   const full = (await createERD(database, false, false, undefined, 'full'))!;
-  assert.match(full, /"case\.letters" \{\n\s+INTEGER Ä PK\n\s+VARCHAR ä \n\s+\}/, 'ä has no key marker');
+  assert.match(full, /"letters" \{\n\s+INTEGER Ä PK\n\s+VARCHAR ä \n\s+\}/, 'ä has no key marker');
   const keys = (await createERD(database, false, false, undefined, 'keys'))!;
-  assert.match(keys, /"case\.letters" \{\n\s+INTEGER Ä PK\n\s+\}/, 'keys omits ä');
+  assert.match(keys, /"letters" \{\n\s+INTEGER Ä PK\n\s+\}/, 'keys omits ä');
   assert.doesNotMatch(keys, /\bnote\b/);
 });

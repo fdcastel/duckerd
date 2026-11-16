@@ -82,7 +82,7 @@ test('source generation is opt-in, annotates unknown edges, and does not add FK 
   assert.equal(generateMermaidCodeForAllDBs(data, false, false, /.*/i), baseline);
   const source = generateMermaidCodeForAllDBs(data, false, true)!;
   assert.ok(source.includes(INFERRED_RELATIONSHIPS_COMMENT));
-  assert.match(source, /"db.lineitem" }o\.\.o\{ "db.orders" : "inferred: order_id \(unknown\)"/);
+  assert.match(source, /"lineitem" }o\.\.o\{ "orders" : "inferred: order_id \(unknown\)"/);
   assert.doesNotMatch(source, /\bFK\b/);
   assert.equal(generateMermaidCodeForAllDBs(data, false, true, /_key$/i), baseline);
 });
@@ -105,11 +105,11 @@ test('inferred source qualifies colliding table names and retains unique names',
     table('orders', { order_id: 'INTEGER' }, 'archive'), table('lines', { order_id: 'INTEGER' }, 'archive'),
   );
   const source = generateMermaidCodeForAllDBs(data, false, true)!;
-  for (const name of ['db.main.orders', 'db.archive.orders', 'db.lineitem', 'db.lines']) {
+  for (const name of ['main.orders', 'archive.orders', 'lineitem', 'lines']) {
     assert.ok(source.includes(`"${name}" {`), name);
   }
-  assert.match(source, /"db.lineitem" }o\.\.o\{ "db.main.orders"/);
-  assert.match(source, /"db.lines" }o\.\.o\{ "db.archive.orders"/);
+  assert.match(source, /"lineitem" }o\.\.o\{ "main.orders"/);
+  assert.match(source, /"lines" }o\.\.o\{ "archive.orders"/);
   assert.equal(source.match(/}o\.\.o\{/g)?.length, 2);
 });
 
@@ -133,7 +133,7 @@ test('empty metadata returns no diagram and table identities inherit their metad
   const data: Metadata = { databases: [
     { name: 'empty' }, { name: 'db', schemas: [{ name: 'main', tables }] },
   ] };
-  assert.match(generateMermaidCodeForAllDBs(data, false, true)!, /"db.a" }o\.\.o\{ "db.b"/);
+  assert.match(generateMermaidCodeForAllDBs(data, false, true, undefined, 'full', { qualify: 'always' })!, /"db.a" }o\.\.o\{ "db.b"/);
 });
 
 test('a foreign key without a referenced table is rejected instead of drawn as "undefined"', () => {

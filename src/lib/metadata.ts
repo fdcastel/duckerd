@@ -189,9 +189,50 @@ export type DetailLevel = typeof detailLevels[number];
  */
 const foldIdentifier = (name: string): string => name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 
+/**
+ * Whether table names include their database: only when the diagram spans more
+ * than one database, always, or never.
+ */
+export const qualifyModes = ['auto', 'always', 'never'] as const;
+export type QualifyMode = typeof qualifyModes[number];
+
+export interface DiagramOptions {
+  qualify?: QualifyMode;
+}
+
+type TableName = (databaseName: string, schemaName: string, name: string) => string;
+
+/**
+ * Returns the diagram name for each table: `table` or `database.table`, depending
+ * on `qualify`. Names shared by several tables gain the schema, and if that is
+ * still ambiguous (only possible without the database) become `database.schema.table`.
+ */
+export const tableNamer = (
+  tables: { databaseName: string; schemaName: string; name: string }[], qualify: QualifyMode,
+): TableName => {
+  const withDatabase = qualify === 'always' || (qualify === 'auto' && new Set(tables.map((table) => table.databaseName)).size > 1);
+  const levels: TableName[] = [
+    (database, _, name) => withDatabase ? `${database}.${name}` : name,
+    (database, schema, name) => withDatabase ? `${database}.${schema}.${name}` : `${schema}.${name}`,
+    (database, schema, name) => `${database}.${schema}.${name}`,
+  ];
+  const counts = levels.map((level) => {
+    const count = new Map<string, number>();
+    for (const table of tables) {
+      const name = level(table.databaseName, table.schemaName, table.name);
+      count.set(name, (count.get(name) ?? 0) + 1);
+    }
+    return count;
+  });
+  return (database, schema, name) => {
+    const level = levels.findIndex((level, index) => (counts[index].get(level(database, schema, name)) ?? 0) <= 1);
+    return levels[level === -1 ? levels.length - 1 : level](database, schema, name);
+  };
+};
+
 export const generateMermaidCodeForAllDBs = (
   metadata: Metadata, expandStructs: boolean = false, infer: boolean = false,
-  inferRegex: RegExp = DEFAULT_INFER_REGEX, detail: DetailLevel = 'full',
+  inferRegex: RegExp = DEFAULT_INFER_REGEX, detail: DetailLevel = 'full', options: DiagramOptions = {},
 ): string | undefined => {
   let mermaidCode = `erDiagram
   
@@ -206,14 +247,8 @@ export const generateMermaidCodeForAllDBs = (
 
   const hasForeignKeys = tables.some(table => table.constraints?.some(constraint => constraint.constraintType === 'FOREIGN KEY'));
   const inferred = infer && !hasForeignKeys ? inferRelationships(tables, inferRegex) : [];
-  const names = new Map<string, number>();
-  for (const table of tables) {
-    const name = `${table.databaseName}.${table.name}`;
-    names.set(name, (names.get(name) ?? 0) + 1);
-  }
-  // Tables that share a name across schemas would merge into one entity; qualify them with the schema.
-  const qualifiedName = (databaseName: string, schemaName: string, name: string): string =>
-    (names.get(`${databaseName}.${name}`) ?? 0) > 1 ? `${databaseName}.${schemaName}.${name}` : `${databaseName}.${name}`;
+  // Tables sharing a name would merge into one entity, so names are qualified as needed.
+  const qualifiedName = tableNamer(tables, options.qualify ?? 'auto');
   const entityName = (table: Table): string => qualifiedName(table.databaseName!, table.schemaName!, table.name);
   if (inferred.length > 0) mermaidCode += `${INFERRED_RELATIONSHIPS_COMMENT}\n  `;
 

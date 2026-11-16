@@ -78,7 +78,7 @@ test('CLI renders SVG and saves expanded source without a temporary source file 
   assert.match(svg, /width="800" height="600"/);
   assert.match(readFileSync(source, 'utf8'), /^erDiagram/);
   // Declared foreign keys draw unlabeled edges; the crow's feet already show the relationship.
-  assert.match(readFileSync(source, 'utf8'), /"sample data\.teams" \|\|--o\{ "sample data\.people" : ""$/m);
+  assert.match(readFileSync(source, 'utf8'), /"teams" \|\|--o\{ "people" : ""$/m);
   assert.match(svg, /class="pele-marker"/);
   assert.doesNotMatch(svg, /pele-edge-label|>has<\/text>/);
   assert.equal(existsSync(path.join(directory, 'schema_erd.mmd')), false);
@@ -193,9 +193,9 @@ test('CLI inference is opt-in, scopes links to schemas, and preserves saved-sour
   const source = readFileSync(path.join(directory, 'inferred.mmd'), 'utf8');
   assert.match(source, /^\s*%% duckerd:inferred-relationships$/m);
   assert.equal(source.match(/}o\.\.o\{/g)?.length, 4, 'three main-schema pairs plus one archive pair');
-  assert.match(source, /"inference.archive.lines"|"inference.lines"/);
-  assert.match(source, /"inference.archive.orders"/);
-  assert.match(source, /"inference.main.orders"/);
+  assert.match(source, /"archive.lines"|"lines"/);
+  assert.match(source, /"archive.orders"/);
+  assert.match(source, /"main.orders"/);
   assert.doesNotMatch(source, /\bFK\b|inferred:.*(?:region_id|customer_key|status)/i);
   const svg = readFileSync(path.join(directory, 'inferred.svg'), 'utf8');
   assert.match(svg, />details__region_id<\/text>/);
@@ -217,13 +217,25 @@ test('CLI --detail trims columns from the saved source and the diagram', () => {
   const keys = readFileSync(path.join(directory, 'detail-keys.mmd'), 'utf8');
   assert.match(keys, /team_id FK/);
   assert.doesNotMatch(keys, /full_name|status|score/);
-  assert.match(keys, /^\s*"sample data\.orders"$/m, 'keyless tables keep a name-only box');
+  assert.match(keys, /^\s*"orders"$/m, 'keyless tables keep a name-only box');
   assert.doesNotMatch(readFileSync(path.join(directory, 'detail-names.mmd'), 'utf8'), /\{\s*$|^\s*\}/m);
   assert.ok(heights.names < heights.keys && heights.keys < heights.full, JSON.stringify(heights));
 
   const invalid = run('-d', database, '--detail', 'some', '-o', 'detail-invalid.svg');
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /--detail.*Allowed choices are full, keys, names/);
+});
+
+test('CLI --qualify controls the database prefix on table names', () => {
+  for (const [mode, name] of [['auto', 'teams'], ['never', 'teams'], ['always', 'sample data.teams']]) {
+    const result = run('-d', database, '--qualify', mode, '-o', `qualify-${mode}.svg`, '-m', `qualify-${mode}.mmd`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(readFileSync(path.join(directory, `qualify-${mode}.mmd`), 'utf8'), new RegExp(`^\\s*"${name}" \\{$`, 'm'), mode);
+    assert.match(readFileSync(path.join(directory, `qualify-${mode}.svg`), 'utf8'), new RegExp(`>${name}</text>`), mode);
+  }
+  const invalid = run('-d', database, '--qualify', 'sometimes', '-o', 'qualify-invalid.svg');
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /--qualify.*Allowed choices are auto, always, never/);
 });
 
 test('CLI custom inference regex replaces the default in SVG, PNG, and PDF', () => {

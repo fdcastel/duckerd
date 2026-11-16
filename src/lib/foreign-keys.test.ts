@@ -50,20 +50,20 @@ test('foreign keys use the referenced table name, once per constraint', async ()
   const source = (await createERD(database))!;
   const edges = source.split('\n').map((line) => line.trim()).filter((line) => line.includes('||--o{'));
   assert.deepEqual(edges.sort(), [
-    '"keys.Location" ||--o{ "keys.child" : ""',
-    '"keys.employee" ||--o{ "keys.employee" : ""',
-    '"keys.pair" ||--o{ "keys.child" : ""',
+    '"Location" ||--o{ "child" : ""',
+    '"employee" ||--o{ "employee" : ""',
+    '"pair" ||--o{ "child" : ""',
   ]);
 });
 
 test('same-named tables in different schemas stay separate entities', async () => {
   const source = (await createERD(sameName))!;
-  assert.match(source, /"samename\.crm\.users" \{\n\s+INTEGER id PK\n\s+VARCHAR email \n\s+\}/);
-  assert.match(source, /"samename\.billing\.users" \{\n\s+INTEGER id PK\n\s+VARCHAR iban \n\s+\}/);
-  assert.doesNotMatch(source, /"samename\.users"/);
+  assert.match(source, /"crm\.users" \{\n\s+INTEGER id PK\n\s+VARCHAR email \n\s+\}/);
+  assert.match(source, /"billing\.users" \{\n\s+INTEGER id PK\n\s+VARCHAR iban \n\s+\}/);
+  assert.doesNotMatch(source, /"users"/);
   const edges = source.split('\n').map((line) => line.trim()).filter((line) => line.includes('||--o{'));
   assert.deepEqual(edges.sort(), [
-    '"samename.billing.users" ||--o{ "samename.invoices" : ""',
-    '"samename.crm.users" ||--o{ "samename.tickets" : ""',
+    '"billing.users" ||--o{ "invoices" : ""',
+    '"crm.users" ||--o{ "tickets" : ""',
   ]);
 });
