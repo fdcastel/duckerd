@@ -11,3 +11,6 @@ test/data/
 *.duckdb
 
 dist/
+
+# Local scratch output
+tmp/
