@@ -20,7 +20,7 @@ The output takes the diagram's natural size, about 8700 × 4800 pixels. SVG outp
 Each table's comment records its original schema (see below), so `--group-comment` can draw a box around each one:
 
 ```bash
-duckerd -d adventureworks.duckdb --detail names --group-comment 'schema: (\w+)' -o adventureworks-grouped.svg
+npm start -- -d adventureworks.duckdb --detail names --group-comment 'schema: (\w+)' -o adventureworks-grouped.svg
 ```
 
 Grouped, the `names` diagram is about 3700 × 3600, and `keys` about 4800 × 5600.

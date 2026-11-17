@@ -86,8 +86,8 @@ test('keys detail keeps only the columns that matched an inferred relationship',
     instance.closeSync();
   }
   const source = (await createERD(database, false, true, undefined, 'keys'))!;
-  assert.match(source, /"inferred\.items" }o\.\.o\{ "inferred\.orders"/);
-  assert.match(source, /"inferred\.orders" \{\n\s+INTEGER Ä_id \n\s+\}/, 'orders keeps only the matched INTEGER column');
+  assert.match(source, /"items" }o\.\.o\{ "orders"/);
+  assert.match(source, /"orders" \{\n\s+INTEGER Ä_id \n\s+\}/, 'orders keeps only the matched INTEGER column');
   assert.doesNotMatch(source, /ä_id/);
 });
 
